@@ -11,9 +11,15 @@ const bodyParser = require('body-parser');
 const session = require('express-session');
 const { Resend } = require('resend');
 
-// SQLite dependencies
-const sqlite3 = require('sqlite3');
-const { open } = require('sqlite');
+// Conditional database imports
+let sqlite3, open, Pool;
+const USE_POSTGRES = process.env.DB_TYPE === 'postgres';
+if (!USE_POSTGRES) {
+  sqlite3 = require('sqlite3');
+  ({ open } = require('sqlite'));
+} else {
+  ({ Pool } = require('pg'));
+}
 
 const upload = multer();
 const app = express();
@@ -69,16 +75,80 @@ app.use(session({
 }));
 
 // ============================================
-// SQLITE DATABASE CONNECTION
+// DATABASE CONNECTION
 // ============================================
 let db;
 const otpStore = {};
 
 (async () => {
-  db = await open({
-    filename: path.join(__dirname, 'grocery.db'),
-    driver: sqlite3.Database
-  });
+  if (USE_POSTGRES) {
+    // PostgreSQL connection
+    console.log('🔄 Initializing PostgreSQL connection...');
+    const pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+    });
+
+    // Test connection
+    try {
+      const client = await pool.connect();
+      const result = await client.query('SELECT version()');
+      console.log('✅ PostgreSQL connected:', result.rows[0].version);
+      client.release();
+    } catch (err) {
+      console.error('❌ PostgreSQL connection failed:', err);
+      throw err;
+    }
+
+    // Create wrapper functions to match SQLite API
+    const convertPlaceholders = (sql) => {
+      let index = 0;
+      return sql.replace(/\?/g, () => `$${++index}`);
+    };
+
+    db = {
+      run: async (sql, params = []) => {
+        let pgSql = convertPlaceholders(sql);
+        
+        // Add RETURNING id for INSERT statements if not already present
+        if (pgSql.trim().toUpperCase().startsWith('INSERT') && 
+            !pgSql.toUpperCase().includes('RETURNING')) {
+          pgSql += ' RETURNING id';
+        }
+        
+        const result = await pool.query(pgSql, params);
+        return { 
+          lastID: result.rows[0]?.id || null,
+          changes: result.rowCount 
+        };
+      },
+      get: async (sql, params = []) => {
+        const pgSql = convertPlaceholders(sql);
+        const result = await pool.query(pgSql, params);
+        return result.rows[0] || null;
+      },
+      all: async (sql, params = []) => {
+        const pgSql = convertPlaceholders(sql);
+        const result = await pool.query(pgSql, params);
+        return result.rows;
+      },
+      exec: async (sql) => {
+        await pool.query(sql);
+      }
+    };
+
+    console.log('✅ PostgreSQL database ready');
+  } else {
+    // SQLite connection (fallback)
+    console.log('🔄 Initializing SQLite connection...');
+    db = await open({
+      filename: path.join(__dirname, 'grocery.db'),
+      driver: sqlite3.Database
+    });
+    console.log('✅ SQLite database ready');
+  }
+
+  if (!USE_POSTGRES) {
 
   // Initialize tables if not exist
   await db.exec(`
@@ -289,6 +359,7 @@ const otpStore = {};
   }
 
   console.log('✅ SQLite database ready at grocery.db');
+  } // End of if (!USE_POSTGRES)
   
   // Run auto-completion check after database is ready
   autoCompleteDeliveries();
@@ -1880,10 +1951,11 @@ app.post("/send-email", async (req, res) => {
 // ROOT ROUTE
 // ============================================
 app.get('/', (req, res) => {
+  const dbType = USE_POSTGRES ? 'PostgreSQL' : 'SQLite';
   res.json({ 
     ok: true, 
     message: 'EazzyMart Backend API is running',
-    database: 'SQLite',
+    database: dbType,
     endpoints: {
       health: '/api/ping',
       items: '/api/items',
@@ -1898,10 +1970,12 @@ app.get('/', (req, res) => {
 // HEALTH CHECK
 // ============================================
 app.get('/api/ping', (req, res) => {
+  const dbType = USE_POSTGRES ? 'postgres' : 'sqlite';
   res.json({ 
     ok: true, 
-    message: 'Server is running with SQLite',
-    databaseReady: !!db 
+    message: `Server is running with ${dbType}`,
+    databaseReady: !!db,
+    databaseType: dbType
   });
 });
 
