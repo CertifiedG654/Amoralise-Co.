@@ -157,6 +157,45 @@ const otpStore = {};
     };
 
     console.log('✅ PostgreSQL database ready');
+    
+    // PostgreSQL migrations: Check and add missing columns
+    try {
+      // Check if restocked_at column exists in return_refund_requests
+      const columnCheck = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'return_refund_requests' 
+        AND column_name = 'restocked_at'
+      `);
+      
+      if (columnCheck.rows.length === 0) {
+        console.log('🔄 Adding restocked_at column to return_refund_requests (PostgreSQL)...');
+        await pool.query(`
+          ALTER TABLE return_refund_requests 
+          ADD COLUMN restocked_at TIMESTAMPTZ
+        `);
+        console.log('✅ Added restocked_at column');
+      }
+      
+      // Check if restock_processed column exists
+      const restockProcessedCheck = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'return_refund_requests' 
+        AND column_name = 'restock_processed'
+      `);
+      
+      if (restockProcessedCheck.rows.length === 0) {
+        console.log('🔄 Adding restock_processed column to return_refund_requests (PostgreSQL)...');
+        await pool.query(`
+          ALTER TABLE return_refund_requests 
+          ADD COLUMN restock_processed BOOLEAN NOT NULL DEFAULT FALSE
+        `);
+        console.log('✅ Added restock_processed column');
+      }
+    } catch (migrationErr) {
+      console.warn('⚠️ PostgreSQL migration warning:', migrationErr.message);
+    }
   } else {
     // SQLite connection (fallback)
     console.log('🔄 Initializing SQLite connection...');
@@ -1706,7 +1745,9 @@ app.put("/api/return-refund/:id/status", async (req, res) => {
 
     const requestType = (request.request_type || 'Return').toLowerCase();
     const shouldRestock = requestType === 'return' && (status === 'Approved' || status === 'Returned');
-    let restockProcessed = Number(request.restock_processed) === 1;
+    let restockProcessed = request.restock_processed === true 
+      || request.restock_processed === 1 
+      || request.restock_processed === '1';
     let stockRestored = false;
 
     if (shouldRestock && !restockProcessed) {
@@ -1725,19 +1766,35 @@ app.put("/api/return-refund/:id/status", async (req, res) => {
     }
 
     // Update request status (and restock metadata if applicable)
-    await db.run(
-      `UPDATE return_refund_requests 
-       SET status = ?, 
-           admin_notes = ?, 
-           updated_at = datetime('now', 'localtime'),
-           restock_processed = ?,
-           restocked_at = CASE 
-             WHEN ? = 1 THEN COALESCE(restocked_at, datetime('now', 'localtime'))
-             ELSE restocked_at
-           END
-       WHERE id = ?`,
-      [status, admin_notes || null, restockProcessed ? 1 : 0, restockProcessed ? 1 : 0, id]
-    );
+    const restockProcessedParam = USE_POSTGRES 
+      ? restockProcessed 
+      : (restockProcessed ? 1 : 0);
+
+    // Build UPDATE query based on whether restock is being processed
+    if (restockProcessed && stockRestored) {
+      // First time restocking - set restocked_at
+      await db.run(
+        `UPDATE return_refund_requests 
+         SET status = ?, 
+             admin_notes = ?, 
+             updated_at = datetime('now', 'localtime'),
+             restock_processed = ?,
+             restocked_at = datetime('now', 'localtime')
+         WHERE id = ?`,
+        [status, admin_notes || null, restockProcessedParam, id]
+      );
+    } else {
+      // Not restocking or already restocked - don't modify restocked_at
+      await db.run(
+        `UPDATE return_refund_requests 
+         SET status = ?, 
+             admin_notes = ?, 
+             updated_at = datetime('now', 'localtime'),
+             restock_processed = ?
+         WHERE id = ?`,
+        [status, admin_notes || null, restockProcessedParam, id]
+      );
+    }
 
     // Update order status if needed
     if (status === 'Returned') {
