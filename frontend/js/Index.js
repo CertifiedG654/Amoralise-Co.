@@ -1065,14 +1065,14 @@ if (browseSection) {
     // Category mapping: Map HTML category names to EXACT database category values
     // These MUST match exactly what's stored in the items.category column in the database
     const categoryMap = {
-      'fresh produce': ['Fresh Produce'],
-      'dairy': ['Dairy'],
-      'snacks': ['Snacks'],
-      'beverages': ['Beverages'],
-      'frozen foods': ['Frozen Foods'],
-      'canned goods': ['Canned Goods'],
-      'household items': ['Household Items'],
-      'personal care': ['Personal Care']
+      'beer': ['Beer'],
+      'whiskey': ['Whiskey'],
+      'vodka': ['Vodka'],
+      'gin': ['Gin'],
+      'rum': ['Rum'],
+      'brandy': ['Brandy'],
+      'tequila': ['Tequila'],
+      'wine': ['Wine']
     };
     
     // Debug: Log the category map to verify it's correct
