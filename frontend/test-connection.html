@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backend Connection Test - Amoralise Co</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        .status {
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px 10px 0;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            max-height: 300px;
+        }
+        .endpoint-list {
+            list-style: none;
+            padding: 0;
+        }
+        .endpoint-list li {
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-left: 3px solid #007bff;
+            padding-left: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Backend Connection Test</h1>
+        
+        <div class="test-section">
+            <h3>Configuration</h3>
+            <div class="info status" id="configStatus">
+                Loading configuration...
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h3>Backend Health Check</h3>
+            <button onclick="testBackend()" id="testBtn">Test Connection</button>
+            <div id="backendStatus"></div>
+            <pre id="backendResponse" style="display:none;"></pre>
+        </div>
+
+        <div class="test-section">
+            <h3>Test API Endpoints</h3>
+            <button onclick="testItems()">Test /api/items</button>
+            <button onclick="testUsers()">Test /api/user</button>
+            <div id="apiTestStatus"></div>
+            <pre id="apiTestResponse" style="display:none;"></pre>
+        </div>
+
+        <div class="test-section">
+            <h3>Available Endpoints</h3>
+            <ul class="endpoint-list">
+                <li><code>GET /api/ping</code> - Health check</li>
+                <li><code>GET /api/items</code> - Get all items</li>
+                <li><code>GET /api/user</code> - Get all users</li>
+                <li><code>POST /api/customer/login</code> - Customer login</li>
+                <li><code>POST /api/customer/register</code> - Customer registration</li>
+                <li><code>GET /api/sales</code> - Get sales/orders</li>
+                <li><code>POST /api/sales</code> - Create order</li>
+                <li><code>GET /api/orders/customer</code> - Get customer orders</li>
+            </ul>
+        </div>
+
+        <div class="test-section">
+            <h3>Troubleshooting Tips</h3>
+            <ul>
+                <li>If you see CORS errors, the backend CORS settings may need adjustment</li>
+                <li>If connection fails, check if backend is running (free tier may be sleeping)</li>
+                <li>First request after sleep takes 30-50 seconds</li>
+                <li>Check browser console (F12) for detailed error messages</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script>
+        // Display current configuration
+        document.addEventListener('DOMContentLoaded', () => {
+            const configDiv = document.getElementById('configStatus');
+            const hostname = window.location.hostname;
+            const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '';
+            
+            configDiv.innerHTML = `
+                <strong>Current Environment:</strong> ${isLocal ? 'Local Development' : 'Production'}<br>
+                <strong>API Base URL:</strong> ${window.API_BASE_URL}<br>
+                <strong>Hostname:</strong> ${hostname || 'file://'}
+            `;
+            configDiv.className = 'info status';
+        });
+
+        async function testBackend() {
+            const statusDiv = document.getElementById('backendStatus');
+            const responseDiv = document.getElementById('backendResponse');
+            const btn = document.getElementById('testBtn');
+            
+            btn.disabled = true;
+            statusDiv.innerHTML = '<div class="loading status">⏳ Testing connection... (may take up to 50 seconds if backend is sleeping)</div>';
+            responseDiv.style.display = 'none';
+
+            try {
+                const startTime = Date.now();
+                const response = await fetch(window.getApiUrl('api/ping'));
+                const responseTime = Date.now() - startTime;
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <div class="success status">
+                            ✅ Connection Successful!<br>
+                            Response Time: ${responseTime}ms<br>
+                            Database: ${data.databaseType || 'Unknown'}<br>
+                            Status: ${data.message}
+                        </div>
+                    `;
+                    responseDiv.textContent = JSON.stringify(data, null, 2);
+                    responseDiv.style.display = 'block';
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="error status">
+                        ❌ Connection Failed!<br>
+                        Error: ${error.message}<br><br>
+                        Possible causes:<br>
+                        • Backend is sleeping (wait 50 seconds and try again)<br>
+                        • Backend URL is incorrect<br>
+                        • CORS is blocking the request<br>
+                        • Backend is not running
+                    </div>
+                `;
+                responseDiv.textContent = error.stack;
+                responseDiv.style.display = 'block';
+                console.error('Connection test failed:', error);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function testItems() {
+            await testEndpoint('api/items', 'GET');
+        }
+
+        async function testUsers() {
+            await testEndpoint('api/user', 'GET');
+        }
+
+        async function testEndpoint(endpoint, method = 'GET') {
+            const statusDiv = document.getElementById('apiTestStatus');
+            const responseDiv = document.getElementById('apiTestResponse');
+            
+            statusDiv.innerHTML = `<div class="loading status">⏳ Testing ${endpoint}...</div>`;
+            responseDiv.style.display = 'none';
+
+            try {
+                const response = await fetch(window.getApiUrl(endpoint), { method });
+                const data = await response.json();
+
+                if (response.ok) {
+                    const itemCount = Array.isArray(data) ? data.length : 'N/A';
+                    statusDiv.innerHTML = `
+                        <div class="success status">
+                            ✅ ${endpoint} works!<br>
+                            Status: ${response.status}<br>
+                            ${Array.isArray(data) ? `Items returned: ${itemCount}` : ''}
+                        </div>
+                    `;
+                    responseDiv.textContent = JSON.stringify(data, null, 2);
+                    responseDiv.style.display = 'block';
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${data.message || response.statusText}`);
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `
+                    <div class="error status">
+                        ❌ Test Failed!<br>
+                        Endpoint: ${endpoint}<br>
+                        Error: ${error.message}
+                    </div>
+                `;
+                responseDiv.textContent = error.stack;
+                responseDiv.style.display = 'block';
+                console.error('Endpoint test failed:', error);
+            }
+        }
+
+        // Auto-test on load (optional)
+        // window.addEventListener('load', () => {
+        //     setTimeout(testBackend, 1000);
+        // });
+    </script>
+</body>
+</html>
+

@@ -11,7 +11,7 @@ window.API_BASE_URL = (function() {
     return 'http://localhost:3000';
   }
   // Production backend URL - UPDATE THIS WITH YOUR ACTUAL RENDER BACKEND URL
-  return 'https://eazzymart-backend.onrender.com';
+  return 'https://amoralise-co.onrender.com';
 })();
 
 // Also export for Node.js/CommonJS compatibility
