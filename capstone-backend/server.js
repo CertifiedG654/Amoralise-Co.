@@ -1,4 +1,4 @@
-// server.js
+/*// server.js
 // Load environment variables from .env file (for local development)
 require('dotenv').config();
 
@@ -2181,3 +2181,4 @@ app.use((req, res) => {
     process.exit(1);
   }
 })();
+*/
